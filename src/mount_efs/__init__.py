@@ -94,6 +94,7 @@ AMAZON_LINUX_2_RELEASE_VERSIONS = [
     AMAZON_LINUX_2_RELEASE_ID,
     AMAZON_LINUX_2_PRETTY_NAME,
 ]
+UBUNTU_24_RELEASE = "Ubuntu 24"
 
 CLONE_NEWNET = 0x40000000
 CONFIG_FILE = "/etc/amazon/efs/efs-utils.conf"
@@ -225,6 +226,7 @@ DEFAULT_STUNNEL_CAFILE = "/etc/amazon/efs/efs-utils.crt"
 
 LEGACY_STUNNEL_MOUNT_OPTION = "stunnel"
 
+NFS_CONF_PATH = "/etc/nfs.conf"
 NOT_BEFORE_MINS = 15
 NOT_AFTER_HOURS = 3
 
@@ -293,6 +295,7 @@ MACOS_SEQUOIA_RELEASE = "macOS-15"
 DEFAULT_NFS_MAX_READAHEAD_MULTIPLIER = 15
 NFS_READAHEAD_CONFIG_PATH_FORMAT = "/sys/class/bdi/%s:%s/read_ahead_kb"
 NFS_READAHEAD_OPTIMIZE_LINUX_KERNEL_MIN_VERSION = [5, 4]
+NFS_READAHEAD_EXEC_PATH = "/usr/libexec/nfsrahead"
 
 # MacOS does not support the property of Socket SO_BINDTODEVICE in stunnel configuration
 SKIP_NO_SO_BINDTODEVICE_RELEASES = [
@@ -3987,35 +3990,92 @@ def optimize_readahead_window(mountpoint, options, config):
         DEFAULT_NFS_MAX_READAHEAD_MULTIPLIER * int(options["rsize"]) / 1024
     )
 
-    try:
-        major, minor = decode_device_number(os.stat(mountpoint).st_dev)
-        # modify read_ahead_kb in /sys/class/bdi/<bdi>/read_ahead_kb
-        # The bdi identifier is in the form of MAJOR:MINOR, which can be derived from device number
-        #
-        read_ahead_kb_config_file = NFS_READAHEAD_CONFIG_PATH_FORMAT % (major, minor)
+    system_release_version = get_system_release_version()
 
-        logging.debug(
-            "Modifying value in %s to %s.",
-            read_ahead_kb_config_file,
-            str(fixed_readahead_kb),
-        )
-        p = subprocess.Popen(
-            "echo %s > %s" % (fixed_readahead_kb, read_ahead_kb_config_file),
-            shell=True,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-        )
-        _, error = p.communicate()
-        if p.returncode != 0:
-            logging.warning(
-                'Failed to modify read_ahead_kb: %s with returncode: %d, error: "%s".'
-                % (fixed_readahead_kb, p.returncode, error.strip())
+    major, minor = decode_device_number(os.stat(mountpoint).st_dev)
+
+    if UBUNTU_24_RELEASE in system_release_version:
+        try:
+            # use nfsrahead to set readahead as setting via read_ahead_kb not supported in ubuntu24
+            update_nfs_conf_for_readahead(fixed_readahead_kb)
+            device_number = f"{major}:{minor}"
+            logging.debug(
+                "Using nfsrahead tool to set readahead to %s for %s",
+                str(fixed_readahead_kb),
+                mountpoint,
             )
+            p = subprocess.Popen(
+                [NFS_READAHEAD_EXEC_PATH, "-F", device_number],
+                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+            )
+            _, error = p.communicate()
+            if p.returncode != 0:
+                logging.warning(
+                    'Failed to set readahead using nfsrahead: %s with error: "%s"'
+                    % (fixed_readahead_kb, error.strip())
+                )
+        except Exception as e:
+            logging.warning('Failed to use nfsrahead tool: "%s"' % e)
+    else:
+        try:
+            # modify read_ahead_kb in /sys/class/bdi/<bdi>/read_ahead_kb
+            # The bdi identifier is in the form of MAJOR:MINOR, which can be derived from device number
+            read_ahead_kb_config_file = NFS_READAHEAD_CONFIG_PATH_FORMAT % (
+                major,
+                minor,
+            )
+
+            logging.debug(
+                "Modifying value in %s to %s.",
+                read_ahead_kb_config_file,
+                str(fixed_readahead_kb),
+            )
+            p = subprocess.Popen(
+                "echo %s > %s" % (fixed_readahead_kb, read_ahead_kb_config_file),
+                shell=True,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+            )
+            _, error = p.communicate()
+            if p.returncode != 0:
+                logging.warning(
+                    'Failed to modify read_ahead_kb: %s with returncode: %d, error: "%s".'
+                    % (fixed_readahead_kb, p.returncode, error.strip())
+                )
+        except Exception as e:
+            logging.warning(
+                'Failed to modify read_ahead_kb: %s with error: "%s".'
+                % (fixed_readahead_kb, e)
+            )
+
+
+def update_nfs_conf_for_readahead(read_ahead_kb):
+    nfs_config = ConfigParser()
+
+    try:
+        nfs_config.read(NFS_CONF_PATH)
     except Exception as e:
         logging.warning(
-            'Failed to modify read_ahead_kb: %s with error: "%s".'
-            % (fixed_readahead_kb, e)
+            'Failed to read nfs.conf. Ensure nfs-common is installed: "%s".' % e
         )
+        raise
+
+    if "nfsrahead" not in nfs_config:
+        nfs_config["nfsrahead"] = {}
+
+    nfs_config["nfsrahead"]["nfs"] = str(read_ahead_kb)
+    nfs_config["nfsrahead"]["nfs4"] = str(read_ahead_kb)
+
+    try:
+        with open(NFS_CONF_PATH, "w") as f:
+            nfs_config.write(f)
+    except Exception as e:
+        logging.warning(
+            'Failed to write nfs.conf for nfsrahead. Ensure nfs-common is installed: "%s".'
+            % e
+        )
+        raise
 
 
 # https://github.com/torvalds/linux/blob/master/include/linux/kdev_t.h#L48-L49

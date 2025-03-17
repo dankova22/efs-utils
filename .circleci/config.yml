@@ -50,7 +50,7 @@ commands:
           name: Install dependencies
           command: |
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata
-            apt-get -y install binutils git rustc cargo pkg-config libssl-dev gettext
+            apt-get -y install binutils git rustc cargo pkg-config libssl-dev gettext nfs-common
       - run:
           name: Add local build repo as safe git directory
           command: |
@@ -262,6 +262,9 @@ workflows:
       - build-deb-package:
           name: ubuntu22
           image: ubuntu:22.04
+      - build-deb-package:
+          name: ubuntu24
+          image: ubuntu:24.04
       - build-deb-package:
           name: debian11
           image: debian:bullseye
