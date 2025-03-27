@@ -319,6 +319,8 @@ ECS_FARGATE_TASK_METADATA_ENDPOINT_ENV = "ECS_CONTAINER_METADATA_URI_V4"
 ECS_FARGATE_TASK_METADATA_ENDPOINT_URL_EXTENSION = "/task"
 ECS_FARGATE_CLIENT_IDENTIFIER = "ecs.fargate"
 
+AWS_CONTAINER_CREDS_FULL_URI_ENV = 'AWS_CONTAINER_CREDENTIALS_FULL_URI'
+AWS_CONTAINER_AUTH_TOKEN_FILE_ENV = 'AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE'
 
 def errcheck(ret, func, args):
     from ctypes import get_errno
@@ -731,6 +733,12 @@ def get_aws_security_credentials(
         )
         if credentials and credentials_source:
             return credentials, credentials_source
+        
+    # attempt to lookup AWS security credentials through Pod Identity
+    credentials, credentials_source = get_aws_security_credentials_from_pod_identity(config, False)
+    if credentials and credentials_source:
+        return credentials, credentials_source
+
 
     # attempt to lookup AWS security credentials through AssumeRoleWithWebIdentity
     # (e.g. for IAM Role for Service Accounts (IRSA) approach on EKS)
@@ -888,6 +896,45 @@ def get_aws_security_credentials_from_webidentity(
     else:
         return None, None
 
+def get_aws_security_credentials_from_pod_identity(config, is_fatal=False):
+    if (AWS_CONTAINER_CREDS_FULL_URI_ENV not in os.environ or
+            AWS_CONTAINER_AUTH_TOKEN_FILE_ENV not in os.environ):
+        return None, None
+
+    creds_uri = os.environ[AWS_CONTAINER_CREDS_FULL_URI_ENV]
+    token_file = os.environ[AWS_CONTAINER_AUTH_TOKEN_FILE_ENV]
+
+    try:
+        with open(token_file, 'r') as f:
+            token = f.read().strip()
+            if "\r" in token or "\n" in token:
+                if is_fatal:
+                    unsuccessful_resp = "AWS Container Auth Token contains invalid characters"
+                    fatal_error(unsuccessful_resp, unsuccessful_resp)
+                return None, None
+    except Exception as e:
+        if is_fatal:
+            unsuccessful_resp = f"Error reading Aws Container Auth Token file {token_file}: {e}"
+            fatal_error(unsuccessful_resp, unsuccessful_resp)
+        return None, None
+
+    unsuccessful_resp = f"Unsuccessful retrieval of AWS security credentials from Container Credentials URI at {creds_uri}"
+    url_error_msg = f"Unable to reach Container Credentials URI at {creds_uri}"
+
+    pod_identity_security_dict = url_request_helper(
+        config,
+        creds_uri,
+        unsuccessful_resp,
+        url_error_msg,
+        headers={'Authorization': token}
+    )
+
+    if pod_identity_security_dict and all(k in pod_identity_security_dict for k in CREDENTIALS_KEYS):
+        return pod_identity_security_dict, f"podidentity:{creds_uri},{token_file}"
+
+    if is_fatal:
+        fatal_error(unsuccessful_resp, unsuccessful_resp)
+    return None, None
 
 def get_sts_endpoint_url(config, region):
     dns_name_suffix = get_dns_name_suffix(config, region)
@@ -1804,7 +1851,7 @@ def bootstrap_proxy(
                 if credentials_source:
                     cert_details["awsCredentialsMethod"] = credentials_source
                     logging.debug(
-                        "AWS credentials source used for IAM authentication: ",
+                        "AWS credentials source used for IAM authentication: %s",
                         credentials_source,
                     )
 

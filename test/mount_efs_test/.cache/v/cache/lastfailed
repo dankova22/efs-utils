@@ -1,0 +1,21 @@
+{
+  "test_get_aws_security_credentials.py::test_credentials_file_helper_awsprofile_found_missing_key": true,
+  "test_get_aws_security_credentials.py::test_credentials_file_helper_awsprofile_found_with_token": true,
+  "test_get_aws_security_credentials.py::test_credentials_file_helper_awsprofile_found_without_token": true,
+  "test_get_aws_security_credentials.py::test_credentials_file_helper_awsprofile_not_found": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_botocore_present_get_assumed_profile_credentials": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_config_or_creds_file_found_creds_found_with_token_with_awsprofile": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_config_or_creds_file_found_creds_found_without_token_with_awsprofile": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_credentials_not_found_in_aws_creds_uri": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_credentials_not_found_in_files_and_botocore_not_present": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_do_not_use_iam": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_from_webidentity_passed_in_both_params": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_from_webidentity_passed_in_one_param": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_get_ecs_from_option_url": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_get_instance_metadata_role_name_bytes": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_get_instance_metadata_role_name_bytes_with_token_fetch_error": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_get_instance_metadata_role_name_str": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_get_instance_metadata_role_name_str_with_token_fetch_error": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_no_credentials_found": true,
+  "test_get_aws_security_credentials.py::test_get_aws_security_credentials_pod_identity": true
+}
